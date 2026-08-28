@@ -20,9 +20,10 @@ TF_MAP = {
     "1h": ("7d", "60m"), "2h": ("7d", "90m"), "4h": ("1mo", "60m"),
     "1d": ("6mo", "1d"), "1W": ("1y", "1wk")
 }
-ALIAS_MAP = {"XAUUSD":"GC=F","GOLD":"GC=F","BTCUSD":"BTC-USD","BTC":"BTC-USD"}
+# FIX: XAUUSD spot price ke liye XAUUSD=X, GC=F nahi
+ALIAS_MAP = {"XAUUSD":"XAUUSD=X","GOLD":"XAUUSD=X","XAU":"XAUUSD=X","GC":"XAUUSD=X","BTCUSD":"BTC-USD","BTC":"BTC-USD","XAUUSD=X":"XAUUSD=X"}
 
-DEFAULT_SYMBOLS = ["GC=F", "BTC-USD"]
+DEFAULT_SYMBOLS = ["XAUUSD=X", "BTC-USD"]
 custom_symbols = set(DEFAULT_SYMBOLS)
 user_settings = {"tf": "15m"}
 
@@ -33,41 +34,63 @@ def normalize_symbol(s):
 def fetch_yahoo_data(symbol, range_str, interval):
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-        r = session.get(url, params={"range":range_str,"interval":interval}, timeout=10)
-        j = r.json()['chart']['result'][0]
-        ts=j['timestamp']; q=j['indicators']['quote'][0]
+        r = session.get(url, params={"range":range_str,"interval":interval}, timeout=12)
+        data = r.json()['chart']['result'][0]
+        ts=data['timestamp']; q=data['indicators']['quote'][0]
         df=pd.DataFrame({'Close':q['close'],'High':q['high'],'Low':q['low']}, index=pd.to_datetime(ts, unit='s'))
         df.dropna(inplace=True)
-        return df
+        # Live price from meta
+        live_price = data['meta'].get('regularMarketPrice', df['Close'].iloc[-1])
+        return df, live_price
     except Exception as e:
         print(f"Fetch fail {symbol}: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(), None
 
-def get_analysis(df):
+def get_analysis(df, live_price):
     if len(df) < 50: return None
-    close = df['Close'].iloc[-1]
+    close = live_price if live_price else df['Close'].iloc[-1]
+
     ema9 = df['Close'].ewm(span=9).mean().iloc[-1]
+    ema21 = df['Close'].ewm(span=21).mean().iloc[-1]
     ema50 = df['Close'].ewm(span=50).mean().iloc[-1]
+
     sup = df['Low'].tail(20).min()
     res = df['High'].tail(20).max()
     atr = (df['High']-df['Low']).tail(14).mean()
-    if ema9 > ema50 and close > ema9:
+
+    # Recent slope check - last 5 candle trend
+    last_5_avg = df['Close'].tail(5).mean()
+    prev_5_avg = df['Close'].tail(10).head(5).mean()
+    is_down = last_5_avg < prev_5_avg
+    is_up = last_5_avg > prev_5_avg
+
+    # FIXED LOGIC - ab down me BUY nahi dega
+    if close > ema9 and ema9 > ema21 and ema21 > ema50 and is_up:
         verdict="BUY"; trend="Up Trend"; sl=sup; risk=close-sl
-    elif ema9 < ema50 and close < ema9:
+    elif close < ema9 and ema9 < ema21 and ema21 < ema50 and is_down:
         verdict="SELL"; trend="Down Trend"; sl=res; risk=sl-close
     else:
-        verdict="WAIT"; trend="Sideways"; sl=close-atr if close>ema9 else close+atr; risk=abs(close-sl)
+        verdict="WAIT"; trend="Sideways";
+        sl=close-atr if close>ema21 else close+atr; risk=abs(close-sl)
+
+    # Safety - risk 0 na ho
+    if risk < atr*0.5: risk = atr
+
     entry=close
     t1=entry+risk if verdict=="BUY" else entry-risk
     t2=entry+risk*2 if verdict=="BUY" else entry-risk*2
     t3=entry+risk*3 if verdict=="BUY" else entry-risk*3
-    return {"trend":trend,"verdict":verdict,"support":sup,"resistance":res,"entry":entry,"sl":sl,"t1":t1,"t2":t2,"t3":t3}
+
+    if verdict=="WAIT":
+        t1=entry; t2=entry; t3=entry
+
+    return {"trend":trend,"verdict":verdict,"support":sup,"resistance":res,"entry":entry,"sl":sl,"t1":t1,"t2":t2,"t3":t3,"live":close,"ema9":ema9,"ema50":ema50}
 
 def get_signals_for_symbol(symbol):
     rng, interv = TF_MAP.get(user_settings['tf'], ("5d","15m"))
-    df = fetch_yahoo_data(symbol, rng, interv)
+    df, live = fetch_yahoo_data(symbol, rng, interv)
     if df.empty: return None
-    a = get_analysis(df)
+    a = get_analysis(df, live)
     if not a: return None
     return {"analysis":a, "symbol":symbol}
 
@@ -101,10 +124,17 @@ async def scan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not r:
                 await update.message.reply_text(f"{sym} data fail"); continue
             a=r['analysis']
-            name="XAUUSD" if "GC" in r['symbol'] else r['symbol'].replace("=X","").replace("-USD","")
+            # Name fix
+            if "XAU" in r['symbol']: name="XAUUSD"
+            elif "BTC" in r['symbol']: name="BTC-USD"
+            else: name=r['symbol']
+
             emoji="🟢" if a['verdict']=="BUY" else "🔴" if a['verdict']=="SELL" else "🟡"
+
+            # LIVE PRICE ADDED
             txt=(
                 f"{emoji} {name} | {a['trend']} | {a['verdict']}\n"
+                f"Live: {a['live']:.2f} | TF: {user_settings['tf']}\n"
                 f"Entry: {a['entry']:.2f} SL: {a['sl']:.2f}\n"
                 f"T1: {a['t1']:.2f} T2: {a['t2']:.2f} T3: {a['t3']:.2f}\n"
                 f"Sup: {a['support']:.2f} Res: {a['resistance']:.2f}\n\n"
@@ -118,14 +148,14 @@ async def scan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args: await update.message.reply_text("Use: /add XAUUSD"); return
     sym=normalize_symbol(context.args[0]); custom_symbols.add(sym)
-    await update.message.reply_text(f"Added {sym} Total {len(custom_symbols)}")
+    await update.message.reply_text(f"Added {sym}")
 async def remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args: await update.message.reply_text("Use: /remove XAUUSD"); return
     sym=normalize_symbol(context.args[0]); custom_symbols.discard(sym)
     await update.message.reply_text(f"Removed {sym}")
 async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     custom_symbols.clear(); custom_symbols.update(DEFAULT_SYMBOLS)
-    await update.message.reply_text("Reset to XAUUSD & BTC-USD Done")
+    await update.message.reply_text("Reset to XAUUSD & BTC-USD")
 async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Pairs: {', '.join(custom_symbols)}")
 async def tf_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -133,8 +163,6 @@ async def tf_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_settings['tf']=context.args[0]
         await update.message.reply_text(f"TF set to {user_settings['tf']}")
     else: await update.message.reply_text("Use /tf 1m,3m,5m,15m,30m,1h,2h,4h,1d,1W")
-async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"TF:{user_settings['tf']} Pairs:{len(custom_symbols)}")
 
 async def button_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q=update.callback_query; await q.answer()
@@ -153,11 +181,10 @@ application.add_handler(CommandHandler("remove", remove_cmd))
 application.add_handler(CommandHandler("reset", reset_cmd))
 application.add_handler(CommandHandler("list", list_cmd))
 application.add_handler(CommandHandler("tf", tf_cmd))
-application.add_handler(CommandHandler("settings", settings_cmd))
 application.add_handler(CallbackQueryHandler(button_cb))
 
 @app.route('/')
-def home(): return f"Bot OK TF:{user_settings['tf']} Pairs:{len(custom_symbols)}"
+def home(): return f"Bot OK TF:{user_settings['tf']}"
 
 if __name__ == "__main__":
     loop = asyncio.new_event_loop()
