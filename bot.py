@@ -1,11 +1,10 @@
-import os, asyncio, pandas as pd, requests as req_lib
+import os, asyncio, pandas as pd
 from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from curl_cffi import requests as cffi_requests
-import concurrent.futures
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 10000))
@@ -23,21 +22,14 @@ TF_MAP = {
     "1d": ("6mo", "1d"), "1W": ("1y", "1wk")
 }
 
-ALIAS_MAP = {
-    "XAUUSD": "GC=F", "GOLD": "GC=F", "XAU": "GC=F",
-    "BTCUSD": "BTC-USD", "BTC": "BTC-USD",
-    "ETHUSD": "ETH-USD", "ETH": "ETH-USD"
-}
+ALIAS_MAP = {"XAUUSD": "GC=F", "GOLD": "GC=F", "XAU": "GC=F", "BTCUSD": "BTC-USD", "BTC": "BTC-USD"}
 
-# === ONLY XAUUSD & BTC AS YOU SAID ===
 DEFAULT_SYMBOLS = ["GC=F", "BTC-USD"]
 custom_symbols = set(DEFAULT_SYMBOLS)
-
 user_settings = {"pivot": 10, "tf": "15m", "rr": 2.0, "ChannelW": 5, "loopback": 290, "minstrength": 1}
 
-def get_ist(): return datetime.utcnow() + timedelta(hours=5, minutes=30)
 def normalize_symbol(s):
-    s = s.upper().strip()
+    s=s.upper().strip()
     return ALIAS_MAP.get(s, s)
 
 def fetch_yahoo_data(symbol, range_str, interval):
@@ -55,7 +47,6 @@ def compute_atr(df, period=14):
     hl = df['High']-df['Low']; hc = (df['High']-df['Close'].shift()).abs(); lc = (df['Low']-df['Close'].shift()).abs()
     tr = pd.concat([hl,hc,lc], axis=1).max(axis=1)
     return tr.ewm(alpha=1/period, adjust=False).mean()
-
 def compute_adx(df, period=14):
     plus_dm = df['High'].diff(); minus_dm = -df['Low'].diff()
     plus_dm[plus_dm<0]=0; minus_dm[minus_dm<0]=0
@@ -85,8 +76,7 @@ def get_sr_zones(df):
     for p in vals:
         lo, hi, strength = p, p, 0
         for q in vals:
-            if abs(q-lo)<=cwidth:
-                lo=min(lo,q); hi=max(hi,q); strength+=20
+            if abs(q-lo)<=cwidth: lo=min(lo,q); hi=max(hi,q); strength+=20
         if strength>=user_settings['minstrength']*20: zones.append((lo,hi))
     uniq=[];
     for lo,hi in zones:
@@ -99,8 +89,7 @@ def get_dashboard_analysis(df):
     ema_long = compute_ema(df['Close'], 50)
     adx, plus_di, minus_di = compute_adx(df, 14)
     atr = compute_atr(df, 14)
-    close = df['Close'].iloc[-1]
-    es = ema_short.iloc[-1]; el = ema_long.iloc[-1]
+    close = df['Close'].iloc[-1]; es = ema_short.iloc[-1]; el = ema_long.iloc[-1]
     adx_v = adx.iloc[-1]; plus_v = plus_di.iloc[-1]; minus_v = minus_di.iloc[-1]
     bull=0; bear=0
     bull+= 1 if es>el else 0; bear+= 1 if es<el else 0
@@ -127,7 +116,7 @@ def get_dashboard_analysis(df):
     t1=entry+risk if verdict=="BUY" else entry-risk
     t2=entry+risk*2 if verdict=="BUY" else entry-risk*2
     t3=entry+risk*3 if verdict=="BUY" else entry-risk*3
-    return {"close":close,"trend":trend,"verdict":verdict,"bullPct":bullPct,"bearPct":bearPct,"neutral":max(0,100-bullPct-bearPct),"support":nearestSup,"resistance":nearestRes,"entry":entry,"sl":sl,"t1":t1,"t2":t2,"t3":t3,"ema_short":es,"ema_long":el,"adx":adx_v}
+    return {"close":close,"trend":trend,"verdict":verdict,"support":nearestSup,"resistance":nearestRes,"entry":entry,"sl":sl,"t1":t1,"t2":t2,"t3":t3}
 
 def get_signals_for_symbol(symbol):
     range_str, interval = TF_MAP.get(user_settings['tf'], ("5d","15m"))
@@ -151,67 +140,69 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_joined(update.effective_user.id):
         kb=[[InlineKeyboardButton("📢 Join Channel", url=CHANNEL_LINK)]]
         await update.message.reply_text(f"Join {CHANNEL_LINK}", reply_markup=InlineKeyboardMarkup(kb)); return
-    kb=[[InlineKeyboardButton("🔍 Scan", callback_data="scan")],
-        [InlineKeyboardButton("1m",callback_data="tf_1m"),InlineKeyboardButton("5m",callback_data="tf_5m"),InlineKeyboardButton("15m",callback_data="tf_15m"),InlineKeyboardButton("1H",callback_data="tf_1h")]]
-    await update.message.reply_text(f"🤖 **Parth Dashboard vFinal**\nTF:{user_settings['tf']} Pivot:{user_settings['pivot']} Pairs:{len(custom_symbols)}\n\n**Commands:**\n/scan - scan\n/settings - settings dekho\n/add XAUUSD - add\n/remove XAUUSD - hatao\n/list - list\n/clear - sab clear\n/reset - XAU & BTC reset\n/tf 5m - timeframe\n/pivot 10 - pivot\n/rr 2.0 - RR", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    kb=[
+        [InlineKeyboardButton("1m",callback_data="tf_1m"),InlineKeyboardButton("3m",callback_data="tf_3m"),InlineKeyboardButton("5m",callback_data="tf_5m")],
+        [InlineKeyboardButton("15m",callback_data="tf_15m"),InlineKeyboardButton("30m",callback_data="tf_30m"),InlineKeyboardButton("1H",callback_data="tf_1h")],
+        [InlineKeyboardButton("2H",callback_data="tf_2h"),InlineKeyboardButton("4H",callback_data="tf_4h"),InlineKeyboardButton("1D",callback_data="tf_1d")],
+        [InlineKeyboardButton("1W",callback_data="tf_1W")],
+        [InlineKeyboardButton("🔍 SCAN NOW", callback_data="scan")]
+    ]
+    await update.message.reply_text(f"🤖 **Parth Dashboard**\nTF:{user_settings['tf']} | Pivot:{user_settings['pivot']} | Pairs:{len(custom_symbols)}\n\nCommands: /scan /add /remove /list /clear /reset /tf /pivot", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
 async def scan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_joined(update.effective_user.id): await update.message.reply_text(f"Join {CHANNEL_LINK}"); return
-    await update.message.reply_text(f"📊 Scanning {len(custom_symbols)} pairs TF:{user_settings['tf']} P:{user_settings['pivot']}...")
+    msg = await update.message.reply_text(f"📊 Scanning {', '.join(custom_symbols)} TF:{user_settings['tf']}...")
     results=[]
     for sym in list(custom_symbols):
         try:
             r=get_signals_for_symbol(sym)
             if r: results.append(r)
         except: continue
-    if not results: await update.message.reply_text("❌ Data fail, 30 sec baad /scan karo"); return
+    if not results: await update.message.reply_text("❌ Data fail, 30 sec baad /scan"); return
     for r in results:
-        a=r['analysis']; name="XAUUSD" if "GC" in r['symbol'] else r['symbol'].replace("=X","").replace("-USD","")
+        a=r['analysis']; name="XAUUSD" if "GC" in r['symbol'] else r['symbol'].replace("=X","").replace("-USD","").replace("=F","")
         emoji="🟢" if a['verdict']=="BUY" else "🔴" if a['verdict']=="SELL" else "🟡"
-        txt=f"{emoji} **{name} | {a['trend']} | {a['verdict']}**\nBull:{a['bullPct']}% Bear:{a['bearPct']}% Neut:{a['neutral']}%\nEntry: `{a['entry']:.2f}` SL: `{a['sl']:.2f}`\nT1: `{a['t1']:.2f}` T2: `{a['t2']:.2f}` T3: `{a['t3']:.2f}`\nSup: `{a['support']:.2f}` Res: `{a['resistance']:.2f}`\nEMA9:{a['ema_short']:.2f} EMA50:{a['ema_long']:.2f} ADX:{a['adx']:.1f}"
+        txt=(
+            f"{emoji} {name} | {a['trend']} | {a['verdict']}\n"
+            f"Entry: `{a['entry']:.2f}` SL: `{a['sl']:.2f}`\n"
+            f"T1: `{a['t1']:.2f}` T2: `{a['t2']:.2f}` T3: `{a['t3']:.2f}`\n"
+            f"Sup: `{a['support']:.2f}` Res: `{a['resistance']:.2f}`\n\n"
+            f"🌈 @CryptocurrencyTickers_bot\n"
+            f"💙 Devloped by [ParthTraderAlerts] -Thankyou"
+        )
         await update.message.reply_text(txt, parse_mode="Markdown")
 
 async def add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args: await update.message.reply_text("Use: /add XAUUSD"); return
     sym=normalize_symbol(context.args[0]); custom_symbols.add(sym)
     await update.message.reply_text(f"✅ Added {sym} Total:{len(custom_symbols)}")
-
 async def remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args: await update.message.reply_text("Use: /remove XAUUSD"); return
     sym=normalize_symbol(context.args[0]); custom_symbols.discard(sym)
-    await update.message.reply_text(f"❌ Removed {sym} Total:{len(custom_symbols)}")
-
+    await update.message.reply_text(f"❌ Removed {sym}")
 async def clear_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    custom_symbols.clear(); await update.message.reply_text("🗑️ Cleared all. /add se add karo")
-
+    custom_symbols.clear(); await update.message.reply_text("🗑️ Cleared")
 async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     custom_symbols.clear(); custom_symbols.update(DEFAULT_SYMBOLS)
-    await update.message.reply_text(f"🔄 Reset to XAUUSD & BTC-USD Done!")
-
+    await update.message.reply_text(f"🔄 Reset Done: XAUUSD & BTC-USD")
 async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"📋 Pairs ({len(custom_symbols)}): {', '.join(custom_symbols)}")
-
+    await update.message.reply_text(f"📋 Pairs: {', '.join(custom_symbols)}")
 async def tf_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args or context.args[0] not in TF_MAP:
-        await update.message.reply_text(f"Use: /tf 1m,5m,15m,1h,1d"); return
-    user_settings['tf']=context.args[0]
-    await update.message.reply_text(f"✅ TF = {user_settings['tf']}")
-
+    if not context.args or context.args[0] not in TF_MAP: await update.message.reply_text("Use: /tf 1m,3m,5m,15m,30m,1h,2h,4h,1d,1W"); return
+    user_settings['tf']=context.args[0]; await update.message.reply_text(f"✅ TF = {user_settings['tf']}")
 async def pivot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args: await update.message.reply_text(f"Pivot: {user_settings['pivot']} Use /pivot 10"); return
+    if not context.args: await update.message.reply_text(f"Pivot: {user_settings['pivot']}"); return
     user_settings['pivot']=int(context.args[0]); await update.message.reply_text(f"✅ Pivot = {user_settings['pivot']}")
-
-async def rr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args: await update.message.reply_text(f"RR: {user_settings['rr']}"); return
-    user_settings['rr']=float(context.args[0]); await update.message.reply_text(f"✅ RR = 1:{user_settings['rr']}")
-
 async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"⚙️ **Settings**\nTF: {user_settings['tf']}\nPivot: {user_settings['pivot']}\nRR: 1:{user_settings['rr']}\nWidth: {user_settings['ChannelW']}%\nPairs: {len(custom_symbols)}", parse_mode="Markdown")
+    await update.message.reply_text(f"⚙️ TF:{user_settings['tf']} Pivot:{user_settings['pivot']} Pairs:{len(custom_symbols)}")
 
 async def button_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q=update.callback_query; await q.answer()
     if q.data=="scan": await scan_cmd(update, context)
-    elif q.data.startswith("tf_"): user_settings['tf']=q.data.replace("tf_",""); await q.edit_message_text(f"TF {user_settings['tf']} set")
+    elif q.data.startswith("tf_"):
+        tf=q.data.replace("tf_","")
+        user_settings['tf']=tf
+        await q.edit_message_text(f"✅ TF {tf} set. Ab /scan karo")
 
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("scan", scan_cmd))
@@ -223,12 +214,11 @@ application.add_handler(CommandHandler("reset", reset_cmd))
 application.add_handler(CommandHandler("list", list_cmd))
 application.add_handler(CommandHandler("tf", tf_cmd))
 application.add_handler(CommandHandler("pivot", pivot_cmd))
-application.add_handler(CommandHandler("rr", rr_cmd))
 application.add_handler(CommandHandler("settings", settings_cmd))
 application.add_handler(CallbackQueryHandler(button_cb))
 
 @app.route('/')
-def home(): return f"OK TF:{user_settings['tf']} P:{user_settings['pivot']} Pairs:{len(custom_symbols)}"
+def home(): return f"Bot OK {len(custom_symbols)} TF:{user_settings['tf']}"
 if __name__ == "__main__":
     Thread(target=lambda: app.run(host='0.0.0.0', port=PORT), daemon=True).start()
     asyncio.set_event_loop(asyncio.new_event_loop())
