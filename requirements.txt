@@ -3,3 +3,5 @@ Flask==3.0.3
 pandas
 curl-cffi
 requests
+pytz
+httpx==0.28.1
