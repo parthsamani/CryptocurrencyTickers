@@ -24,6 +24,15 @@ TF_MAP = {
     "1d": ("6mo", "1d"), "1W": ("1y", "1wk"), "1M": ("2y", "1mo")
 }
 
+# User ke liye easy name -> Yahoo name
+ALIAS_MAP = {
+    "XAUUSD": "GC=F", "GOLD": "GC=F",
+    "XAGUSD": "SI=F", "SILVER": "SI=F",
+    "BTCUSD": "BTC-USD", "ETHUSD": "ETH-USD",
+    "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X", "USDJPY": "USDJPY=X",
+    "USDINR": "USDINR=X", "EURINR": "EURINR=X"
+}
+
 DEFAULT_SYMBOLS = [
     "EURUSD=X","GBPUSD=X","USDJPY=X","USDCHF=X","AUDUSD=X","NZDUSD=X","USDCAD=X",
     "EURGBP=X","EURJPY=X","EURCHF=X","EURAUD=X","EURNZD=X","EURCAD=X",
@@ -42,6 +51,14 @@ custom_symbols = set(DEFAULT_SYMBOLS)
 user_settings = {"pivot": 50, "tf": "15m", "rr": 2.0}
 
 def get_ist(): return datetime.utcnow() + timedelta(hours=5, minutes=30)
+
+def normalize_symbol(sym):
+    sym = sym.upper().strip()
+    if sym in ALIAS_MAP: return ALIAS_MAP[sym]
+    if "-" not in sym and "=X" not in sym and "=F" not in sym:
+        if sym.endswith("USD") and len(sym) > 6: # BTCUSD -> BTC-USD
+            return sym.replace("USD","-USD") if "USD" in sym and sym not in ["EURUSD","GBPUSD"] else sym+"=X"
+    return sym
 
 def get_binance_live_price(symbol):
     try:
@@ -78,22 +95,17 @@ def get_signals_for_symbol(symbol):
     range_str, interval = TF_MAP.get(user_settings['tf'], ("5d", "15m"))
     df = fetch_yahoo_data(symbol, range_str, interval)
     if df.empty or len(df) < 80: return None
-
     live_price = get_binance_live_price(symbol) if "-USD" in symbol else None
     curr_price = live_price if live_price else float(df['Close'].iloc[-1])
     df.iloc[-1, df.columns.get_loc('Close')] = curr_price
-
     ema_f = compute_ema(df['Close'], 9); ema_s = compute_ema(df['Close'], 50)
     trend = "BULLISH" if ema_f.iloc[-1] > ema_s.iloc[-1] else "BEARISH"
     highs, lows = find_pivots(df, user_settings['pivot'])
     if not highs or not lows: return None
-
     last_high_price, last_high_idx = float(highs[-1][1]), highs[-1][2]
     last_low_price, last_low_idx = float(lows[-1][1]), lows[-1][2]
-
     is_buy_ready = (len(df) - last_low_idx) == (user_settings['pivot'] + 1)
     is_sell_ready = (len(df) - last_high_idx) == (user_settings['pivot'] + 1)
-
     signals = []
     if is_buy_ready and curr_price > last_low_price:
         risk = curr_price - last_low_price
@@ -103,7 +115,6 @@ def get_signals_for_symbol(symbol):
         risk = last_high_price - curr_price
         tp = curr_price - risk * user_settings['rr']
         signals.append({"type": "SELL", "symbol": symbol, "entry": curr_price, "sl": last_high_price, "tp": tp, "trend": trend})
-
     overview = {"symbol": symbol, "curr": curr_price, "last_high": last_high_price, "last_low": last_low_price, "trend": trend}
     return {"signals": signals, "overview": overview}
 
@@ -124,7 +135,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [[InlineKeyboardButton("🔍 Scan All Live", callback_data="scan")],
           [InlineKeyboardButton("1m", callback_data="tf_1m"), InlineKeyboardButton("5m", callback_data="tf_5m"), InlineKeyboardButton("15m", callback_data="tf_15m"), InlineKeyboardButton("30m", callback_data="tf_30m")],
           [InlineKeyboardButton("1H", callback_data="tf_1h"), InlineKeyboardButton("4H", callback_data="tf_4h"), InlineKeyboardButton("1D", callback_data="tf_1d"), InlineKeyboardButton("1W", callback_data="tf_1W")]]
-    await update.message.reply_text(f"🤖 **FINAL LIVE BOT - Manual**\nTF: {user_settings['tf']} | Pairs: {len(custom_symbols)}\n\n✅ Crypto = Binance Live Price\n✅ Forex = Yahoo Live\n✅ Logic: Next Candle Entry, SL=LOW/HIGH\n\n/scan /overview /tf 1m /add PEPE-USD", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    await update.message.reply_text(f"🤖 **FINAL LIVE BOT**\nTF: {user_settings['tf']} | Pairs: {len(custom_symbols)}\n\nCommands:\n/add XAUUSD / /add BTC-USD\n/remove BTC-USD\n/clear - sab hatane ke liye\n/reset - default wapas\n/list - pairs dekho\n/scan", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
 async def scan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_joined(update.effective_user.id): await update.message.reply_text(f"Join {CHANNEL_LINK}"); return
@@ -139,7 +150,6 @@ async def scan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with concurrent.futures.ThreadPoolExecutor() as pool:
         signals, overviews = await loop.run_in_executor(pool, do_scan)
     msg = f"📊 **LIVE OVERVIEW {user_settings['tf']}** {get_ist().strftime('%H:%M')}\n"
-    msg += f"Price = Binance Live (Crypto) | Yahoo Live (Forex)\n\n"
     for ov in overviews[:40]:
         name = ov['symbol'].replace("-USD","").replace("=X","").replace("=F","")
         msg += f"`{name}` {ov['curr']:.5f} L:{ov['last_low']:.5f} H:{ov['last_high']:.5f} {ov['trend'][:4]}\n"
@@ -148,15 +158,38 @@ async def scan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not signals: await update.message.reply_text("⏳ No Next Candle Entry right now.")
     else:
         for s in signals[:10]:
-            txt = f"{'🟢' if s['type']=='BUY' else '🔴'} **{s['type']} {s['symbol']} | {user_settings['tf']}**\nLIVE Entry: `{s['entry']:.5f}`\nSL ({'LOW' if s['type']=='BUY' else 'HIGH'}): `{s['sl']:.5f}`\nTP 1:{user_settings['rr']}: `{s['tp']:.5f}`\nTrend: {s['trend']}"
+            txt = f"{'🟢' if s['type']=='BUY' else '🔴'} **{s['type']} {s['symbol']} | {user_settings['tf']}**\nLIVE Entry: `{s['entry']:.5f}`\nSL: `{s['sl']:.5f}`\nTP: `{s['tp']:.5f}`\nTrend: {s['trend']}"
             await update.message.reply_text(txt, parse_mode="Markdown")
 
 async def add_symbol_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args: await update.message.reply_text("Ex: /add BTC-USD"); return
-    sym = context.args[0].upper(); custom_symbols.add(sym); await update.message.reply_text(f"Added {sym}")
+    if not context.args: await update.message.reply_text("Ex: /add XAUUSD or /add BTC-USD"); return
+    sym = normalize_symbol(context.args[0])
+    custom_symbols.add(sym)
+    await update.message.reply_text(f"✅ Added {sym} (Total: {len(custom_symbols)})")
+
+async def remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args: await update.message.reply_text("Ex: /remove BTC-USD"); return
+    sym = normalize_symbol(context.args[0])
+    custom_symbols.discard(sym)
+    await update.message.reply_text(f"❌ Removed {sym} (Total: {len(custom_symbols)})")
+
+async def clear_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    custom_symbols.clear()
+    await update.message.reply_text("🗑️ All cleared. Ab /add XAUUSD, /add BTC-USD se add karo.")
+
+async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    custom_symbols.clear()
+    custom_symbols.update(DEFAULT_SYMBOLS)
+    await update.message.reply_text(f"🔄 Reset Done! Default {len(custom_symbols)} pairs wapas aa gaye.")
+
+async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    txt = ", ".join(list(custom_symbols)[:60])
+    await update.message.reply_text(f"📋 Pairs ({len(custom_symbols)}):\n{txt}")
+
 async def tf_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args or context.args[0] not in TF_MAP: await update.message.reply_text(f"TF: {', '.join(TF_MAP.keys())}"); return
     user_settings['tf'] = context.args[0]; await update.message.reply_text(f"TF = {user_settings['tf']}")
+
 async def button_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query; await q.answer()
     if q.data == "scan": await scan_cmd(update, context)
@@ -166,6 +199,10 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("scan", scan_cmd))
 application.add_handler(CommandHandler("overview", scan_cmd))
 application.add_handler(CommandHandler("add", add_symbol_cmd))
+application.add_handler(CommandHandler("remove", remove_cmd))
+application.add_handler(CommandHandler("clear", clear_cmd))
+application.add_handler(CommandHandler("reset", reset_cmd))
+application.add_handler(CommandHandler("list", list_cmd))
 application.add_handler(CommandHandler("tf", tf_cmd))
 application.add_handler(CallbackQueryHandler(button_cb))
 
