@@ -30,23 +30,19 @@ def normalize_symbol(s):
     s=s.upper().strip()
     return ALIAS_MAP.get(s, s)
 
-# REAL SPOT PRICE FETCH
 def get_real_spot_price(symbol):
     try:
         if "XAU" in symbol:
-            # gold-api.com free spot
             r = req.get("https://api.gold-api.com/price/XAU", timeout=5).json()
             price = r.get('price')
             if price: return float(price)
         if "BTC" in symbol:
             r = req.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5).json()
             return float(r['price'])
-    except Exception as e:
-        print(f"Spot fail {symbol}: {e}")
+    except: pass
     return None
 
 def fetch_yahoo_data(symbol, range_str, interval):
-    # For chart we still use GC=F because XAU spot history not in yahoo
     yahoo_sym = "GC=F" if "XAU" in symbol else symbol
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_sym}"
@@ -56,41 +52,31 @@ def fetch_yahoo_data(symbol, range_str, interval):
         df=pd.DataFrame({'Close':q['close'],'High':q['high'],'Low':q['low']}, index=pd.to_datetime(ts, unit='s'))
         df.dropna(inplace=True)
         return df
-    except Exception as e:
-        print(f"Fetch fail {yahoo_sym}: {e}")
+    except:
         return pd.DataFrame()
 
 def get_analysis(df, real_live):
     if len(df) < 50: return None
-    # chart close
     chart_close = float(df['Close'].iloc[-1])
-    # real live price use karo
     close = real_live if real_live else chart_close
-
     ema9 = float(df['Close'].ewm(span=9).mean().iloc[-1])
     ema21 = float(df['Close'].ewm(span=21).mean().iloc[-1])
     ema50 = float(df['Close'].ewm(span=50).mean().iloc[-1])
     sup = float(df['Low'].tail(20).min())
     res = float(df['High'].tail(20).max())
     atr = float((df['High']-df['Low']).tail(14).mean())
-
-    # Adjust sup/res to real price difference
     diff = close - chart_close
-    sup += diff
-    res += diff
-
+    sup += diff; res += diff
     last_5_avg = df['Close'].tail(5).mean()
     prev_5_avg = df['Close'].tail(10).head(5).mean()
     is_down = last_5_avg < prev_5_avg
     is_up = last_5_avg > prev_5_avg
-
     if close > ema9+diff and ema9 > ema21 and ema21 > ema50 and is_up:
         verdict="BUY"; trend="Up Trend"; sl=sup; risk=close-sl
     elif close < ema9+diff and ema9 < ema21 and ema21 < ema50 and is_down:
         verdict="SELL"; trend="Down Trend"; sl=res; risk=sl-close
     else:
         verdict="WAIT"; trend="Sideways"; sl=close-atr if close>ema21+diff else close+atr; risk=abs(close-sl)
-
     if risk < atr*0.5: risk = atr
     entry=close
     t1=entry+risk if verdict=="BUY" else entry-risk if verdict=="SELL" else entry
@@ -125,7 +111,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("1W",callback_data="tf_1W")],
         [InlineKeyboardButton("🔍 SCAN NOW", callback_data="scan")]
     ]
-    await update.message.reply_text(f"Ready TF:{user_settings['tf']}", reply_markup=InlineKeyboardMarkup(kb))
+    guide_text = (
+        f"👋 Welcome to ParthTraderAlerts!\n\n"
+        f"📊 Current TF: {user_settings['tf']} | Pairs: {', '.join(list(custom_symbols))}\n\n"
+        f"📖 User Guide:\n"
+        f"1️⃣ Timeframe select karo niche se\n"
+        f"2️⃣ SCAN NOW dabao signal ke liye\n"
+        f"3️⃣ /add XAUUSD - new pair add\n"
+        f"4️⃣ /tf 15m - TF change\n\n"
+        f"👇 Timeframe Select Karo:"
+    )
+    await update.message.reply_text(guide_text, reply_markup=InlineKeyboardMarkup(kb))
 
 async def scan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_joined(update.effective_user.id):
@@ -165,8 +161,10 @@ async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def tf_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args and context.args[0] in TF_MAP:
         user_settings['tf']=context.args[0]
-        await update.message.reply_text(f"TF {user_settings['tf']}")
-    else: await update.message.reply_text("Use /tf 1m 3m 5m 15m 30m 1h 2h 4h 1d 1W")
+        # FIXED MESSAGE
+        await update.message.reply_text(f"Timeframe set [{user_settings['tf']}] ab scan Karo /scan dabao")
+    else:
+        await update.message.reply_text("Use /tf 1m 3m 5m 15m 30m 1h 2h 4h 1d 1W")
 
 async def button_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q=update.callback_query; await q.answer()
@@ -176,7 +174,8 @@ async def button_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif q.data.startswith("tf_"):
         tf=q.data.replace("tf_","")
         user_settings['tf']=tf
-        await q.message.reply_text(f"TF {tf} set")
+        # FIXED MESSAGE YAHI AAYEGA AB
+        await q.message.reply_text(f"Timeframe set [{tf}] ab scan Karo")
 
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("scan", scan_cmd))
