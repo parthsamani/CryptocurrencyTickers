@@ -10,8 +10,19 @@ import requests as req
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 10000))
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+ADMIN_IDS_RAW = os.getenv("ADMIN_IDS", "")
+GROUP_OWNER_ID = os.getenv("GROUP_OWNER_ID", "")
 GROUP_ID = os.getenv("GROUP_ID", "@DTC_Trader")
 GROUP_LINK = "https://t.me/DTC_Trader"
+
+# --- MULTI ADMIN SUPPORT ---
+ALL_ADMINS = {str(ADMIN_ID)}
+if ADMIN_IDS_RAW:
+    for x in ADMIN_IDS_RAW.split(","):
+        if x.strip(): ALL_ADMINS.add(x.strip())
+if GROUP_OWNER_ID:
+    ALL_ADMINS.add(str(GROUP_OWNER_ID).strip())
+# --- END ---
 
 app = Flask(__name__)
 session = cffi_requests.Session(impersonate="chrome110")
@@ -117,7 +128,7 @@ def get_signals_for_symbol(symbol):
 
 def get_dashboard_text():
     return (
-        f"🤖 Dashboard\nTF:{user_settings['tf']} Pivot:{user_settings['pivot']} Pairs:{len(custom_symbols)}\n"
+        f"🤖 Dashboard @ParthTraderAlertsLive\nTF:{user_settings['tf']} Pivot:{user_settings['pivot']} Pairs:{len(custom_symbols)}\n"
         f"/scan - scan\n/settings - settings dekho\n/add XAUUSD - add\n/remove XAUUSD - hatao\n"
         f"/list - list\n/clear - sab clear\n/reset - XAU & BTC reset\n/tf 5m - timeframe\n/pivot 10 - pivot\n/rr 2.0 - RR"
     )
@@ -128,7 +139,7 @@ def get_full_guide():
         f"📖 User Guide:\n"
         f"1️⃣ /tf 5m - TF (1m 3m 5m 15m 30m 1h 2h 4h 1d 1W)\n Scalping:1m-5m Intraday:15m-1h\n\n"
         f"2️⃣ SCAN NOW dabao - Live BUY/SELL\n\n"
-        f"3️⃣ /add SYMBOL - Naya pair add\n Ex: /add ETH-USD /add EURUSD /add SOL-USD\n\n"
+        f"3️⃣ /add SYMBOL - Naya pair add Ex: /add ETH-USD\n\n"
         f"4️⃣ /remove SYMBOL - Hatao\n\n"
         f"5️⃣ /pivot 10 - Low=zyada signal High=quality\n\n"
         f"6️⃣ /rr 2.0 - 1.5 safe 2.0+ high profit\n\n"
@@ -151,10 +162,9 @@ async def check_access(update: Update):
     users_data[uid]["username"] = f"@{user.username}" if user.username else "NoUsername"
     save_json(USERS_FILE, users_data)
 
-    if str(user.id) == str(ADMIN_ID): return True
+    if str(user.id) in ALL_ADMINS: return True
     if int(user.id) in allowed_users: return True
     if uid in [str(x) for x in allowed_users]: return True
-    # username check
     uname = f"@{user.username}".lower() if user.username else ""
     if uname and uname in [str(x).lower() for x in allowed_users]:
         return True
@@ -180,10 +190,14 @@ async def check_access(update: Update):
             else:
                 kb = [[InlineKeyboardButton("🔗 Join DTC Trader Group", url=GROUP_LINK)]]
                 await update.message.reply_text(
-                    f"👋 Welcome! To use this bot for FREE\n\n"
-                    f"Please join our public group first:\n"
-                    f"🔗 {GROUP_LINK}\n\n"
-                    f"Market ki Gapshap - Member Group Join public group for everyone\n"
+                    f"👋 Welcome! To use this bot for FREE Please join our public group first:\n\n"
+                    f"\n"
+                    f"Ek Trader Dost Ek Aapne Trader Friend se Subah Good Morning nahin Yeh Kahta hai ki Kya Dost Tumahara SL Hit Hua ki nahin!… 🔗 {GROUP_LINK}\n\n"
+                    f"Market ki Gapshap - Group Join Public ublic Group for Every Traders Members Aaj ke loss kal ki fees thi, aur aaj ka profit kal ki salary. Chart band karo, dimaag ko rest do. Kal naye setup, naye SL, naye TP ke saath war karenge. Green candles + Sweet dreams ❤️ Happy Trading & Investing dost 🙏\n"
+  
+  
+  
+
                     f"Join karke fir /start karo, bot auto start ho jayega ✅",
                     reply_markup=InlineKeyboardMarkup(kb)
                 )
@@ -207,12 +221,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("1W",callback_data="tf_1W")],
         [InlineKeyboardButton("🔍 SCAN NOW", callback_data="scan")]
     ]
-    await update.message.reply_text(f"✅ Join successfully so bot started without any issue\n\n{get_full_guide()}", reply_markup=InlineKeyboardMarkup(kb))
+    await update.message.reply_text(f"✅ Join successfully so bot started…\n\n{get_full_guide()}", reply_markup=InlineKeyboardMarkup(kb))
 
 async def dashboard_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_access(update): return
     await update.message.reply_text(get_dashboard_text())
-
 async def scan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_access(update): return
     await update.message.reply_text(f"Scanning {', '.join(list(custom_symbols))} TF:{user_settings['tf']}...")
@@ -226,16 +239,15 @@ async def scan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             name = r['symbol']
         emoji="🟢" if a['verdict']=="BUY" else "🔴" if a['verdict']=="SELL" else "🟡"
-        txt=(f"{emoji} {name} | {a['trend']} | {a['verdict']}\nLive: {a['live']:.2f} | TF: {user_settings['tf']}\nEntry: {a['entry']:.2f} SL: {a['sl']:.2f}\nT1: {a['t1']:.2f} T2: {a['t2']:.2f} T3: {a['t3']:.2f}\nSup: {a['support']:.2f} Res: {a['resistance']:.2f}\n\n🌈 @CryptocurrencyTickers_bot\n💙 Devloped by ParthTraderAlerts -Thankyou")
+        txt=(f"{emoji} {name} | {a['trend']} | {a['verdict']}\nLive: {a['live']:.2f} | TF: {user_settings['tf']}\nEntry: {a['entry']:.2f} SL: {a['sl']:.2f}\nT1: {a['t1']:.2f} T2: {a['t2']:.2f} T3: {a['t3']:.2f}\nSup: {a['support']:.2f} Res: {a['resistance']:.2f}\n\n🌈 @CryptocurrencyTickers_bot\n💙 Devloped by ParthTraderAlerts")
         await update.message.reply_text(txt)
-
 async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_access(update): return
     await update.message.reply_text(get_dashboard_text() + f"\n\nPairs: {', '.join(custom_symbols)}")
 async def add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_access(update): return
     if not context.args:
-        await update.message.reply_text("Use: /add ETH-USD\nEx: /add EURUSD /add SOL-USD"); return
+        await update.message.reply_text("Use: /add ETH-USD"); return
     sym=normalize_symbol(context.args[0]); custom_symbols.add(sym)
     await update.message.reply_text(f"Added {sym} - Ab {sym} ke naam se ayega\n{get_dashboard_text()}")
 async def remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -267,7 +279,7 @@ async def pivot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
         try:
             user_settings['pivot']=int(context.args[0])
-            await update.message.reply_text(f"Pivot set {user_settings['pivot']} - Low=zyada signal High=quality\n{get_dashboard_text()}")
+            await update.message.reply_text(f"Pivot set {user_settings['pivot']}\n{get_dashboard_text()}")
         except:
             await update.message.reply_text("Use: /pivot 10")
     else:
@@ -284,7 +296,7 @@ async def rr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"RR: {user_settings['rr']}")
 
 async def allow_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id)!= str(ADMIN_ID):
+    if str(update.effective_user.id) not in ALL_ADMINS:
         await update.message.reply_text("Owner only"); return
     if not context.args:
         await update.message.reply_text("Use: /allow USER_ID or /allow @username"); return
@@ -314,7 +326,7 @@ async def allow_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Use: /allow 123456789 or /allow @username")
 
 async def deny_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id)!= str(ADMIN_ID):
+    if str(update.effective_user.id) not in ALL_ADMINS:
         await update.message.reply_text("Owner only"); return
     if not context.args:
         await update.message.reply_text("Use: /deny USER_ID or /deny @username"); return
@@ -338,11 +350,11 @@ async def deny_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Use: /deny 123456789 or /deny @username")
 
 async def users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id)!= str(ADMIN_ID):
-        await update.message.reply_text("Owner only - Admin only"); return
+    if str(update.effective_user.id) not in ALL_ADMINS:
+        await update.message.reply_text("Owner only"); return
     if not users_data:
         await update.message.reply_text("No users yet"); return
-    msg=f"👥 Users List - IST\nTotal: {len(users_data)}\n\n"
+    msg=f"👥 Users List - IST\nTotal: {len(users_data)}\nAdmins: {', '.join(ALL_ADMINS)}\n\n"
     for uid, info in list(users_data.items())[-30:]:
         left_info = ""
         if "left_at" in info:
@@ -353,10 +365,9 @@ async def users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q=update.callback_query; await q.answer()
     user=q.from_user
-    # access check for button
     uname = f"@{user.username}".lower() if user.username else ""
     has_manual = int(user.id) in allowed_users or str(user.id) in [str(x) for x in allowed_users] or (uname and uname in [str(x).lower() for x in allowed_users])
-    if str(user.id)!=str(ADMIN_ID) and not has_manual:
+    if str(user.id) not in ALL_ADMINS and not has_manual:
         try:
             m=await application.bot.get_chat_member(GROUP_ID, user.id)
             if m.status in ['left','kicked','banned']:
@@ -365,7 +376,7 @@ async def button_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if is_old:
                     await q.message.reply_text(f"⚠️ You left group so please Join group and use this bot\n{GROUP_LINK}")
                 else:
-                    await q.message.reply_text(f"👋 Welcome! Please join our group first:\n{GROUP_LINK}\nJoin karke /start karo ✅")
+                    await q.message.reply_text(f"👋 Welcome! @CryptocurrencyTickers_bot Please join our group first:\n{GROUP_LINK}\nJoin karke /start karo ✅")
                 return
         except: pass
     if q.data=="scan":
