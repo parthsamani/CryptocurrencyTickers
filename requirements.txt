@@ -1,5 +1,5 @@
-python-telegram-bot==20.7
-Flask==2.3.3
-pandas==2.1.4
-curl-cffi==0.6.2
-requests==2.31.0
+python-telegram-bot==21.6
+Flask==3.0.3
+pandas
+curl-cffi
+requests
