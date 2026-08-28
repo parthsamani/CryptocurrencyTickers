@@ -1,5 +1,4 @@
 import os, asyncio, pandas as pd
-from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -25,7 +24,7 @@ ALIAS_MAP = {"XAUUSD":"GC=F","GOLD":"GC=F","BTCUSD":"BTC-USD","BTC":"BTC-USD"}
 
 DEFAULT_SYMBOLS = ["GC=F", "BTC-USD"]
 custom_symbols = set(DEFAULT_SYMBOLS)
-user_settings = {"pivot": 10, "tf": "15m", "rr": 2.0}
+user_settings = {"tf": "15m"}
 
 def normalize_symbol(s):
     s=s.upper().strip()
@@ -90,52 +89,52 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("1W",callback_data="tf_1W")],
         [InlineKeyboardButton("🔍 SCAN NOW", callback_data="scan")]
     ]
-    await update.message.reply_text(f"🤖 ParthTraderAlerts Ready\nTF:{user_settings['tf']} Pairs:{len(custom_symbols)}\n/scan /add /remove /list /reset /tf", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    await update.message.reply_text(f"ParthTraderAlerts Ready\nTF:{user_settings['tf']} Pairs:{len(custom_symbols)}\n/scan /add /remove /list /reset /tf", reply_markup=InlineKeyboardMarkup(kb))
 
 async def scan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_joined(update.effective_user.id):
         await update.message.reply_text(f"Join {CHANNEL_LINK}"); return
     try:
-        await update.message.reply_text(f"📊 Scanning {', '.join(list(custom_symbols))} TF:{user_settings['tf']}...")
+        await update.message.reply_text(f"Scanning {', '.join(list(custom_symbols))} TF:{user_settings['tf']}...")
         for sym in list(custom_symbols):
             r = get_signals_for_symbol(sym)
             if not r:
-                await update.message.reply_text(f"❌ {sym} data fail"); continue
+                await update.message.reply_text(f"{sym} data fail"); continue
             a=r['analysis']
             name="XAUUSD" if "GC" in r['symbol'] else r['symbol'].replace("=X","").replace("-USD","")
             emoji="🟢" if a['verdict']=="BUY" else "🔴" if a['verdict']=="SELL" else "🟡"
             txt=(
                 f"{emoji} {name} | {a['trend']} | {a['verdict']}\n"
-                f"Entry: `{a['entry']:.2f}` SL: `{a['sl']:.2f}`\n"
-                f"T1: `{a['t1']:.2f}` T2: `{a['t2']:.2f}` T3: `{a['t3']:.2f}`\n"
-                f"Sup: `{a['support']:.2f}` Res: `{a['resistance']:.2f}`\n\n"
+                f"Entry: {a['entry']:.2f} SL: {a['sl']:.2f}\n"
+                f"T1: {a['t1']:.2f} T2: {a['t2']:.2f} T3: {a['t3']:.2f}\n"
+                f"Sup: {a['support']:.2f} Res: {a['resistance']:.2f}\n\n"
                 f"🌈 @CryptocurrencyTickers_bot\n"
                 f"💙 Devloped by ParthTraderAlerts -Thankyou"
             )
-            await update.message.reply_text(txt, parse_mode="Markdown")
+            await update.message.reply_text(txt)
     except Exception as e:
         await update.message.reply_text(f"Error: {e}")
 
 async def add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args: await update.message.reply_text("Use: /add XAUUSD"); return
     sym=normalize_symbol(context.args[0]); custom_symbols.add(sym)
-    await update.message.reply_text(f"✅ Added {sym}")
+    await update.message.reply_text(f"Added {sym} Total {len(custom_symbols)}")
 async def remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args: await update.message.reply_text("Use: /remove XAUUSD"); return
     sym=normalize_symbol(context.args[0]); custom_symbols.discard(sym)
-    await update.message.reply_text(f"❌ Removed {sym}")
+    await update.message.reply_text(f"Removed {sym}")
 async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     custom_symbols.clear(); custom_symbols.update(DEFAULT_SYMBOLS)
-    await update.message.reply_text("🔄 Reset to XAUUSD & BTC-USD")
+    await update.message.reply_text("Reset to XAUUSD & BTC-USD Done")
 async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"📋 Pairs: {', '.join(custom_symbols)}")
+    await update.message.reply_text(f"Pairs: {', '.join(custom_symbols)}")
 async def tf_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args and context.args[0] in TF_MAP:
         user_settings['tf']=context.args[0]
-        await update.message.reply_text(f"✅ TF={user_settings['tf']}")
+        await update.message.reply_text(f"TF set to {user_settings['tf']}")
     else: await update.message.reply_text("Use /tf 1m,3m,5m,15m,30m,1h,2h,4h,1d,1W")
 async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"⚙️ TF:{user_settings['tf']} Pairs:{len(custom_symbols)}")
+    await update.message.reply_text(f"TF:{user_settings['tf']} Pairs:{len(custom_symbols)}")
 
 async def button_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q=update.callback_query; await q.answer()
@@ -145,7 +144,7 @@ async def button_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif q.data.startswith("tf_"):
         tf=q.data.replace("tf_","")
         user_settings['tf']=tf
-        await q.message.reply_text(f"✅ TF {tf} set. Ab /scan karo")
+        await q.message.reply_text(f"TF {tf} set. Ab /scan karo")
 
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("scan", scan_cmd))
