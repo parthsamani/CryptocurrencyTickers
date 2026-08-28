@@ -109,6 +109,28 @@ def get_dashboard_text():
         f"/rr 2.0 - RR"
     )
 
+def get_full_guide():
+    return (
+        f"{get_dashboard_text()}\n\n"
+        f"📖 User Guide:\n"
+        f"1️⃣ /tf 5m - Timeframe set karo (1m 3m 5m 15m 30m 1h 2h 4h 1d 1W)\n"
+        f" Scalping ke liye 1m-5m, Intraday ke liye 15m-1h best hai\n\n"
+        f"2️⃣ /scan ya SCAN NOW dabao - Live price ke sath BUY/SELL signal\n\n"
+        f"3️⃣ /add SYMBOL - Naya pair add kar sakte ho\n"
+        f" Ex: /add EURUSD /add GBPUSD /add ETH-USD\n"
+        f" Forex Crypto sab add hoga\n\n"
+        f"4️⃣ /remove SYMBOL - Pair hatao Ex: /remove BTC-USD\n\n"
+        f"5️⃣ /pivot 10 - Support/Resistance ka level\n"
+        f" Low rakho (5) to zyada signals, High rakho (20) to kam par quality signals\n\n"
+        f"6️⃣ /rr 2.0 - Risk Reward Ratio\n"
+        f" 1.5 se safe trade, 2.0+ se high profit trade\n\n"
+        f"7️⃣ /list - Added pairs dekho\n"
+        f"8️⃣ /clear - Sab pairs clear\n"
+        f"9️⃣ /reset - Default XAUUSD & BTC-USD reset\n"
+        f"🔟 /settings - Current settings dekho\n\n"
+        f"👇 Timeframe Select Karo:"
+    )
+
 application = Application.builder().token(BOT_TOKEN).build()
 
 async def is_joined(uid):
@@ -127,14 +149,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("1W",callback_data="tf_1W")],
         [InlineKeyboardButton("🔍 SCAN NOW", callback_data="scan")]
     ]
-    guide_text = (
-        f"{get_dashboard_text()}\n\n"
-        f"📖 User Guide:\n"
-        f"1️⃣ Timeframe select karo\n"
-        f"2️⃣ SCAN NOW dabao\n\n"
-        f"👇 Timeframe Select Karo:"
-    )
-    await update.message.reply_text(guide_text, reply_markup=InlineKeyboardMarkup(kb))
+    await update.message.reply_text(get_full_guide(), reply_markup=InlineKeyboardMarkup(kb))
 
 async def dashboard_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(get_dashboard_text())
@@ -166,9 +181,9 @@ async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Use: /add XAUUSD"); return
+        await update.message.reply_text("Use: /add XAUUSD\nEx: /add EURUSD /add ETH-USD"); return
     sym=normalize_symbol(context.args[0]); custom_symbols.add(sym)
-    await update.message.reply_text(f"Added {sym} | {get_dashboard_text()}")
+    await update.message.reply_text(f"Added {sym}\n{get_dashboard_text()}")
 
 async def remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -199,17 +214,17 @@ async def pivot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
         try:
             user_settings['pivot']=int(context.args[0])
-            await update.message.reply_text(f"Pivot set {user_settings['pivot']}\n{get_dashboard_text()}")
+            await update.message.reply_text(f"Pivot set {user_settings['pivot']} - Kam pivot=zyada signal, Zyada pivot=quality signal\n{get_dashboard_text()}")
         except:
             await update.message.reply_text("Use: /pivot 10")
     else:
-        await update.message.reply_text(f"Pivot: {user_settings['pivot']}")
+        await update.message.reply_text(f"Pivot: {user_settings['pivot']}\nLow=zyada signal High=quality signal")
 
 async def rr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
         try:
             user_settings['rr']=float(context.args[0])
-            await update.message.reply_text(f"RR set {user_settings['rr']}\n{get_dashboard_text()}")
+            await update.message.reply_text(f"RR set {user_settings['rr']} - 1.5 safe, 2.0+ high profit\n{get_dashboard_text()}")
         except:
             await update.message.reply_text("Use: /rr 2.0")
     else:
