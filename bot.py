@@ -1,6 +1,6 @@
 import os, asyncio, pandas as pd, json, time
 from datetime import datetime, timedelta, timezone
-from flask import Flask
+from flask import Flask, request
 from threading import Thread
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -192,12 +192,8 @@ async def check_access(update: Update):
                 await update.message.reply_text(
                     f"👋 Welcome! To use this bot for FREE Please join our public group first @DTC_Trader:\n\n"
                     f"\n"
-                    f"Ek Trader Dost Ek Aapne Trader Friend se Subah Good Morning nahin Yeh Kahta hai ki Kya Dost Tumahara SL Hit Hua ki nahin!…  🙏 🔗 {GROUP_LINK}\n\n"
+                    f"Ek Trader Dost Ek Aapne Trader Friend se Subah Good Morning nahin Yeh Kahta hai ki Kya Dost Tumahara SL Hit Hua ki nahin!… 🙏 🔗 {GROUP_LINK}\n\n"
                     f"Market ki Gapshap - Group Join Public Group for Every Traders Members Aaj ke loss kal ki fees thi, aur aaj ka profit kal ki salary. Chart band karo, dimaag ko rest do. Kal naye setup, naye SL, naye TP ke saath war karenge. Green candles + Sweet dreams ❤️ Happy Trading & Investing Subh Ratri Dost.🕚\n"
-  
-  
-  
-
                     f"Join karke fir /start karo, bot auto start ho jayega ✅",
                     reply_markup=InlineKeyboardMarkup(kb)
                 )
@@ -406,6 +402,30 @@ application.add_handler(CallbackQueryHandler(button_cb))
 
 @app.route('/')
 def home(): return "Bot Secure OK - DTC Trader - Everything Good"
+
+# --- URL SE USER LIST DEKHNE KA ROUTE ---
+@app.route('/users')
+def users_web():
+    secret = request.args.get('secret','')
+    if secret not in ALL_ADMINS and str(secret)!= str(ADMIN_ID):
+        return "Unauthorized -?secret=ADMIN_ID lagao. Ex: /users?secret=YOUR_ADMIN_ID", 401
+
+    html = f"""
+    <html><head><title>Users List</title>
+    <style>body{{font-family:Arial}} table{{border-collapse:collapse; width:100%}} th,td{{border:1px solid #ccc; padding:8px; text-align:left}} th{{background:#222; color:#fff}} tr:nth-child(even){{background:#f2f2f2}}</style>
+    </head><body>
+    <h2>👥 Users List - IST - Total: {len(users_data)} - Admins: {', '.join(ALL_ADMINS)}</h2>
+    <table><tr><th>ID</th><th>Name</th><th>Username</th><th>First Seen</th><th>Last Seen</th><th>Status</th></tr>
+    """
+    # Sab users dikhao, newest last me
+    for uid, info in users_data.items():
+        status = "Active ✅"
+        if "left_at" in info:
+            status = f"Left ❌ {datetime.fromtimestamp(info['left_at'], IST).strftime('%d-%m %I:%M %p IST')}"
+        html += f"<tr><td>{info.get('id')}</td><td>{info.get('name')}</td><td>{info.get('username')}</td><td>{info.get('first_seen')}</td><td>{info.get('last_seen')}</td><td>{status}</td></tr>"
+    html += "</table><br><p>URL: /users?secret=ADMIN_ID</p></body></html>"
+    return html
+# --- END URL ROUTE ---
 
 if __name__ == "__main__":
     loop = asyncio.new_event_loop()
