@@ -136,7 +136,7 @@ def get_dashboard_text():
 def get_full_guide():
     return (
         f"{get_dashboard_text()}\n\n"
-        f"📖 User Guide:\n"
+        f"📖 User Guide: ↓ @CryptocurrencyTickers_bot\n"
         f"1️⃣ /tf 5m - TF (1m 3m 5m 15m 30m 1h 2h 4h 1d 1W)\n Scalping:1m-5m Intraday:15m-1h\n\n"
         f"2️⃣ SCAN NOW dabao - Live BUY/SELL\n\n"
         f"3️⃣ /add SYMBOL - Naya pair add Ex: /add ETH-USD\n\n"
@@ -190,10 +190,10 @@ async def check_access(update: Update):
             else:
                 kb = [[InlineKeyboardButton("🔗 Join DTC Trader Group", url=GROUP_LINK)]]
                 await update.message.reply_text(
-                    f"👋 Welcome! To use this bot for FREE Please join our public group first:\n\n"
+                    f"👋 Welcome! To use this bot for FREE Please join our public group first @DTC_Trader:\n\n"
                     f"\n"
-                    f"Ek Trader Dost Ek Aapne Trader Friend se Subah Good Morning nahin Yeh Kahta hai ki Kya Dost Tumahara SL Hit Hua ki nahin!… 🔗 {GROUP_LINK}\n\n"
-                    f"Market ki Gapshap - Group Join Public ublic Group for Every Traders Members Aaj ke loss kal ki fees thi, aur aaj ka profit kal ki salary. Chart band karo, dimaag ko rest do. Kal naye setup, naye SL, naye TP ke saath war karenge. Green candles + Sweet dreams ❤️ Happy Trading & Investing dost 🙏\n"
+                    f"Ek Trader Dost Ek Aapne Trader Friend se Subah Good Morning nahin Yeh Kahta hai ki Kya Dost Tumahara SL Hit Hua ki nahin!…  🙏 🔗 {GROUP_LINK}\n\n"
+                    f"Market ki Gapshap - Group Join Public Group for Every Traders Members Aaj ke loss kal ki fees thi, aur aaj ka profit kal ki salary. Chart band karo, dimaag ko rest do. Kal naye setup, naye SL, naye TP ke saath war karenge. Green candles + Sweet dreams ❤️ Happy Trading & Investing Subh Ratri Dost.🕚\n"
   
   
   
@@ -221,7 +221,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("1W",callback_data="tf_1W")],
         [InlineKeyboardButton("🔍 SCAN NOW", callback_data="scan")]
     ]
-    await update.message.reply_text(f"✅ Join successfully so bot started…\n\n{get_full_guide()}", reply_markup=InlineKeyboardMarkup(kb))
+    await update.message.reply_text(f"✅ Join successfull @DTC_Trader so bot started…\n\n{get_full_guide()}", reply_markup=InlineKeyboardMarkup(kb))
 
 async def dashboard_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_access(update): return
