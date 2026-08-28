@@ -24,7 +24,7 @@ TF_MAP = {
 ALIAS_MAP = {"XAUUSD":"XAUUSD","GOLD":"XAUUSD","XAU":"XAUUSD","GC=F":"XAUUSD","BTCUSD":"BTC-USD","BTC":"BTC-USD"}
 DEFAULT_SYMBOLS = ["XAUUSD", "BTC-USD"]
 custom_symbols = set(DEFAULT_SYMBOLS)
-user_settings = {"tf": "15m"}
+user_settings = {"tf": "5m", "pivot": 10, "rr": 2.0}
 
 def normalize_symbol(s):
     s=s.upper().strip()
@@ -85,13 +85,29 @@ def get_analysis(df, real_live):
     return {"trend":trend,"verdict":verdict,"support":sup,"resistance":res,"entry":entry,"sl":sl,"t1":t1,"t2":t2,"t3":t3,"live":close}
 
 def get_signals_for_symbol(symbol):
-    rng, interv = TF_MAP.get(user_settings['tf'], ("5d","15m"))
+    rng, interv = TF_MAP.get(user_settings['tf'], ("5d","5m"))
     df = fetch_yahoo_data(symbol, rng, interv)
     if df.empty: return None
     real_price = get_real_spot_price(symbol)
     a = get_analysis(df, real_price)
     if not a: return None
     return {"analysis":a, "symbol":symbol}
+
+def get_dashboard_text():
+    return (
+        f"🤖 Dashboard\n"
+        f"TF:{user_settings['tf']} Pivot:{user_settings['pivot']} Pairs:{len(custom_symbols)}\n"
+        f"/scan - scan\n"
+        f"/settings - settings dekho\n"
+        f"/add XAUUSD - add\n"
+        f"/remove XAUUSD - hatao\n"
+        f"/list - list\n"
+        f"/clear - sab clear\n"
+        f"/reset - XAU & BTC reset\n"
+        f"/tf 5m - timeframe\n"
+        f"/pivot 10 - pivot\n"
+        f"/rr 2.0 - RR"
+    )
 
 application = Application.builder().token(BOT_TOKEN).build()
 
@@ -112,16 +128,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔍 SCAN NOW", callback_data="scan")]
     ]
     guide_text = (
-        f"👋 Welcome to ParthTraderAlerts!\n\n"
-        f"📊 Current TF: {user_settings['tf']} | Pairs: {', '.join(list(custom_symbols))}\n\n"
+        f"{get_dashboard_text()}\n\n"
         f"📖 User Guide:\n"
-        f"1️⃣ Timeframe select karo niche se\n"
-        f"2️⃣ SCAN NOW dabao signal ke liye\n"
-        f"3️⃣ /add XAUUSD - new pair add\n"
-        f"4️⃣ /tf 15m - TF change\n\n"
+        f"1️⃣ Timeframe select karo\n"
+        f"2️⃣ SCAN NOW dabao\n\n"
         f"👇 Timeframe Select Karo:"
     )
     await update.message.reply_text(guide_text, reply_markup=InlineKeyboardMarkup(kb))
+
+async def dashboard_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(get_dashboard_text())
 
 async def scan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_joined(update.effective_user.id):
@@ -145,26 +161,59 @@ async def scan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await update.message.reply_text(txt)
 
+async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(get_dashboard_text() + f"\n\nPairs: {', '.join(custom_symbols)}")
+
 async def add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args: return
+    if not context.args:
+        await update.message.reply_text("Use: /add XAUUSD"); return
     sym=normalize_symbol(context.args[0]); custom_symbols.add(sym)
-    await update.message.reply_text(f"Added {sym}")
+    await update.message.reply_text(f"Added {sym} | {get_dashboard_text()}")
+
 async def remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args: return
+    if not context.args:
+        await update.message.reply_text("Use: /remove XAUUSD"); return
     sym=normalize_symbol(context.args[0]); custom_symbols.discard(sym)
     await update.message.reply_text(f"Removed {sym}")
-async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    custom_symbols.clear(); custom_symbols.update(DEFAULT_SYMBOLS)
-    await update.message.reply_text("Reset Done")
+
 async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Pairs: {', '.join(custom_symbols)}")
+
+async def clear_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    custom_symbols.clear()
+    await update.message.reply_text("Sab clear ho gaya /reset se wapas la sakte ho")
+
+async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    custom_symbols.clear(); custom_symbols.update(DEFAULT_SYMBOLS)
+    await update.message.reply_text(f"Reset Done XAU & BTC\n{get_dashboard_text()}")
+
 async def tf_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args and context.args[0] in TF_MAP:
         user_settings['tf']=context.args[0]
-        # FIXED MESSAGE
-        await update.message.reply_text(f"Timeframe set [{user_settings['tf']}] ab scan Karo /scan dabao")
+        kb = [[InlineKeyboardButton("🔍 /scan - One Click Scan", callback_data="scan")]]
+        await update.message.reply_text(f"Timeframe set [{user_settings['tf']}] ab scan Karo /scan", reply_markup=InlineKeyboardMarkup(kb))
     else:
-        await update.message.reply_text("Use /tf 1m 3m 5m 15m 30m 1h 2h 4h 1d 1W")
+        await update.message.reply_text("Use: /tf 1m 3m 5m 15m 30m 1h 2h 4h 1d 1W")
+
+async def pivot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.args:
+        try:
+            user_settings['pivot']=int(context.args[0])
+            await update.message.reply_text(f"Pivot set {user_settings['pivot']}\n{get_dashboard_text()}")
+        except:
+            await update.message.reply_text("Use: /pivot 10")
+    else:
+        await update.message.reply_text(f"Pivot: {user_settings['pivot']}")
+
+async def rr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.args:
+        try:
+            user_settings['rr']=float(context.args[0])
+            await update.message.reply_text(f"RR set {user_settings['rr']}\n{get_dashboard_text()}")
+        except:
+            await update.message.reply_text("Use: /rr 2.0")
+    else:
+        await update.message.reply_text(f"RR: {user_settings['rr']}")
 
 async def button_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q=update.callback_query; await q.answer()
@@ -174,16 +223,21 @@ async def button_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif q.data.startswith("tf_"):
         tf=q.data.replace("tf_","")
         user_settings['tf']=tf
-        # FIXED MESSAGE YAHI AAYEGA AB
-        await q.message.reply_text(f"Timeframe set [{tf}] ab scan Karo")
+        kb = [[InlineKeyboardButton("🔍 /scan - One Click Scan", callback_data="scan")]]
+        await q.message.reply_text(f"Timeframe set [{tf}] ab scan Karo /scan", reply_markup=InlineKeyboardMarkup(kb))
 
 application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("dashboard", dashboard_cmd))
 application.add_handler(CommandHandler("scan", scan_cmd))
+application.add_handler(CommandHandler("settings", settings_cmd))
 application.add_handler(CommandHandler("add", add_cmd))
 application.add_handler(CommandHandler("remove", remove_cmd))
-application.add_handler(CommandHandler("reset", reset_cmd))
 application.add_handler(CommandHandler("list", list_cmd))
+application.add_handler(CommandHandler("clear", clear_cmd))
+application.add_handler(CommandHandler("reset", reset_cmd))
 application.add_handler(CommandHandler("tf", tf_cmd))
+application.add_handler(CommandHandler("pivot", pivot_cmd))
+application.add_handler(CommandHandler("rr", rr_cmd))
 application.add_handler(CallbackQueryHandler(button_cb))
 
 @app.route('/')
