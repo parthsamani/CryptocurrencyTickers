@@ -55,8 +55,10 @@ def get_real_spot_price(symbol):
         if "XAU" in symbol:
             r = req.get("https://api.gold-api.com/price/XAU", timeout=5).json()
             if r.get('price'): return float(r['price'])
-        if "-USD" in symbol or "BTC" in symbol or "ETH" in symbol or "SOL" in symbol:
-            bin_sym = symbol.replace("-","")
+        if "-USD" in symbol or "BTC" in symbol or "ETH" in symbol or "SOL" in symbol or "USD" in symbol:
+            bin_sym = symbol.replace("-","").replace("/","")
+            if "USD" in bin_sym and "USDT" not in bin_sym:
+                bin_sym = bin_sym.replace("USD","USDT")
             r = req.get(f"https://api.binance.com/api/v3/ticker/price?symbol={bin_sym}", timeout=5).json()
             if 'price' in r: return float(r['price'])
     except: pass
@@ -115,7 +117,7 @@ def get_signals_for_symbol(symbol):
 
 def get_dashboard_text():
     return (
-        f"🤖 Dashboard ParthTraderAlertsLive\nTF:{user_settings['tf']} Pivot:{user_settings['pivot']} Pairs:{len(custom_symbols)}\n"
+        f"🤖 Dashboard\nTF:{user_settings['tf']} Pivot:{user_settings['pivot']} Pairs:{len(custom_symbols)}\n"
         f"/scan - scan\n/settings - settings dekho\n/add XAUUSD - add\n/remove XAUUSD - hatao\n"
         f"/list - list\n/clear - sab clear\n/reset - XAU & BTC reset\n/tf 5m - timeframe\n/pivot 10 - pivot\n/rr 2.0 - RR"
     )
@@ -125,11 +127,12 @@ def get_full_guide():
         f"{get_dashboard_text()}\n\n"
         f"📖 User Guide:\n"
         f"1️⃣ /tf 5m - TF (1m 3m 5m 15m 30m 1h 2h 4h 1d 1W)\n Scalping:1m-5m Intraday:15m-1h\n\n"
-        f"2️⃣ SCAN NOW - Live BUY/SELL\n\n"
-        f"3️⃣ /add SYMBOL - Ex: /add ETH-USD /add EURUSD\n\n"
-        f"4️⃣ /remove - Hatao\n\n"
+        f"2️⃣ SCAN NOW dabao - Live BUY/SELL\n\n"
+        f"3️⃣ /add SYMBOL - Naya pair add\n Ex: /add ETH-USD /add EURUSD /add SOL-USD\n\n"
+        f"4️⃣ /remove SYMBOL - Hatao\n\n"
         f"5️⃣ /pivot 10 - Low=zyada signal High=quality\n\n"
         f"6️⃣ /rr 2.0 - 1.5 safe 2.0+ high profit\n\n"
+        f"7️⃣ /list /clear /reset /settings\n\n"
         f"👇 Timeframe Select Karo:"
     )
 
@@ -145,32 +148,51 @@ async def check_access(update: Update):
         users_data[uid] = {"id": uid, "name": user.full_name, "username": f"@{user.username}" if user.username else "NoUsername", "first_seen": now_ist.strftime("%d-%m-%Y %I:%M %p IST")}
     users_data[uid]["last_seen"] = now_ist.strftime("%d-%m-%Y %I:%M %p IST")
     users_data[uid]["name"] = user.full_name
+    users_data[uid]["username"] = f"@{user.username}" if user.username else "NoUsername"
     save_json(USERS_FILE, users_data)
 
     if str(user.id) == str(ADMIN_ID): return True
     if int(user.id) in allowed_users: return True
     if uid in [str(x) for x in allowed_users]: return True
+    # username check
+    uname = f"@{user.username}".lower() if user.username else ""
+    if uname and uname in [str(x).lower() for x in allowed_users]:
+        return True
 
     try:
         member = await application.bot.get_chat_member(GROUP_ID, user.id)
         if member.status in ['left', 'kicked', 'banned']:
-            if "left_at" not in users_data[uid]:
-                users_data[uid]["left_at"] = now_ts
-                save_json(USERS_FILE, users_data)
-            left_at = users_data[uid].get("left_at", now_ts)
-            hours_left = 24 - (now_ts - left_at)/3600
-            if hours_left <= 0:
-                kb = [[InlineKeyboardButton("🔗 Join DTC Trader Group", url=GROUP_LINK)]]
-                await update.message.reply_text(f"⛔ You left group so please Join group and use this bot\n24h over, access cancel\nJoin karo fir /start\n\n{GROUP_LINK}", reply_markup=InlineKeyboardMarkup(kb))
-                return False
+            is_old_user = "left_at" in users_data[uid] or "joined_once" in users_data[uid]
+            if is_old_user:
+                if "left_at" not in users_data[uid]:
+                    users_data[uid]["left_at"] = now_ts
+                    save_json(USERS_FILE, users_data)
+                left_at = users_data[uid].get("left_at", now_ts)
+                hours_left = 24 - (now_ts - left_at)/3600
+                if hours_left <= 0:
+                    kb = [[InlineKeyboardButton("🔗 Join DTC Trader Group", url=GROUP_LINK)]]
+                    await update.message.reply_text(f"⛔ You left our group, your access has been cancelled.\nPlease re-join to continue using bot.\n\n{GROUP_LINK}", reply_markup=InlineKeyboardMarkup(kb))
+                    return False
+                else:
+                    kb = [[InlineKeyboardButton("🔗 Join DTC Trader Group", url=GROUP_LINK)]]
+                    await update.message.reply_text(f"⚠️ You left group so please Join group and use this bot\n\nGroup: {GROUP_LINK}\nYour access will expire in {int(hours_left)} hours. Please re-join.", reply_markup=InlineKeyboardMarkup(kb))
+                    return False
             else:
                 kb = [[InlineKeyboardButton("🔗 Join DTC Trader Group", url=GROUP_LINK)]]
-                await update.message.reply_text(f"⚠️ You left group so please Join group and use this bot\nGroup: {GROUP_LINK}\nAccess {int(hours_left)}h me cancel\n", reply_markup=InlineKeyboardMarkup(kb))
+                await update.message.reply_text(
+                    f"👋 Welcome! To use this bot for FREE\n\n"
+                    f"Please join our public group first:\n"
+                    f"🔗 {GROUP_LINK}\n\n"
+                    f"Market ki Gapshap - Member Group Join public group for everyone\n"
+                    f"Join karke fir /start karo, bot auto start ho jayega ✅",
+                    reply_markup=InlineKeyboardMarkup(kb)
+                )
                 return False
         else:
+            users_data[uid]["joined_once"] = True
             if "left_at" in users_data[uid]:
                 del users_data[uid]["left_at"]
-                save_json(USERS_FILE, users_data)
+            save_json(USERS_FILE, users_data)
             return True
     except Exception as e:
         print(f"Check fail {e}")
@@ -199,7 +221,10 @@ async def scan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not r:
             await update.message.reply_text(f"{sym} data fail"); continue
         a=r['analysis']
-        name = "XAUUSD" if "XAU" in r['symbol'] or r['symbol']=="GC=F" else r['symbol']
+        if "XAU" in r['symbol'] or r['symbol']=="GC=F":
+            name = "XAUUSD"
+        else:
+            name = r['symbol']
         emoji="🟢" if a['verdict']=="BUY" else "🔴" if a['verdict']=="SELL" else "🟡"
         txt=(f"{emoji} {name} | {a['trend']} | {a['verdict']}\nLive: {a['live']:.2f} | TF: {user_settings['tf']}\nEntry: {a['entry']:.2f} SL: {a['sl']:.2f}\nT1: {a['t1']:.2f} T2: {a['t2']:.2f} T3: {a['t3']:.2f}\nSup: {a['support']:.2f} Res: {a['resistance']:.2f}\n\n🌈 @CryptocurrencyTickers_bot\n💙 Devloped by ParthTraderAlerts -Thankyou")
         await update.message.reply_text(txt)
@@ -210,9 +235,9 @@ async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_access(update): return
     if not context.args:
-        await update.message.reply_text("Use: /add ETH-USD"); return
+        await update.message.reply_text("Use: /add ETH-USD\nEx: /add EURUSD /add SOL-USD"); return
     sym=normalize_symbol(context.args[0]); custom_symbols.add(sym)
-    await update.message.reply_text(f"Added {sym}\n{get_dashboard_text()}")
+    await update.message.reply_text(f"Added {sym} - Ab {sym} ke naam se ayega\n{get_dashboard_text()}")
 async def remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_access(update): return
     if context.args:
@@ -224,11 +249,11 @@ async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def clear_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_access(update): return
     custom_symbols.clear()
-    await update.message.reply_text("Sab clear")
+    await update.message.reply_text("Sab clear ho gaya /reset se wapas la sakte ho")
 async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_access(update): return
     custom_symbols.clear(); custom_symbols.update(DEFAULT_SYMBOLS)
-    await update.message.reply_text(f"Reset Done\n{get_dashboard_text()}")
+    await update.message.reply_text(f"Reset Done XAU & BTC\n{get_dashboard_text()}")
 async def tf_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_access(update): return
     if context.args and context.args[0] in TF_MAP:
@@ -240,39 +265,107 @@ async def tf_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def pivot_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_access(update): return
     if context.args:
-        user_settings['pivot']=int(context.args[0])
-        await update.message.reply_text(f"Pivot {user_settings['pivot']} set")
+        try:
+            user_settings['pivot']=int(context.args[0])
+            await update.message.reply_text(f"Pivot set {user_settings['pivot']} - Low=zyada signal High=quality\n{get_dashboard_text()}")
+        except:
+            await update.message.reply_text("Use: /pivot 10")
+    else:
+        await update.message.reply_text(f"Pivot: {user_settings['pivot']}")
 async def rr_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_access(update): return
     if context.args:
-        user_settings['rr']=float(context.args[0])
-        await update.message.reply_text(f"RR {user_settings['rr']} set")
+        try:
+            user_settings['rr']=float(context.args[0])
+            await update.message.reply_text(f"RR set {user_settings['rr']}\n{get_dashboard_text()}")
+        except:
+            await update.message.reply_text("Use: /rr 2.0")
+    else:
+        await update.message.reply_text(f"RR: {user_settings['rr']}")
+
 async def allow_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id)!= str(ADMIN_ID): return
-    if context.args:
-        uid=int(context.args[0]); allowed_users.add(uid); save_json(ALLOWED_FILE, list(allowed_users))
-        await update.message.reply_text(f"Access granted {uid}")
+    if str(update.effective_user.id)!= str(ADMIN_ID):
+        await update.message.reply_text("Owner only"); return
+    if not context.args:
+        await update.message.reply_text("Use: /allow USER_ID or /allow @username"); return
+    input_val = context.args[0]
+    if input_val.startswith("@"):
+        uname = input_val.lower()
+        found_id = None
+        for uid, info in users_data.items():
+            if info.get('username','').lower() == uname:
+                found_id = int(uid)
+                break
+        if found_id:
+            allowed_users.add(found_id)
+            save_json(ALLOWED_FILE, list(allowed_users))
+            await update.message.reply_text(f"Access granted to {input_val} (ID:{found_id})")
+        else:
+            allowed_users.add(uname)
+            save_json(ALLOWED_FILE, list(allowed_users))
+            await update.message.reply_text(f"Access granted to {input_val} - jab wo /start karega auto allow ho jayega")
+    else:
+        try:
+            uid=int(input_val)
+            allowed_users.add(uid)
+            save_json(ALLOWED_FILE, list(allowed_users))
+            await update.message.reply_text(f"Access granted to {uid}")
+        except:
+            await update.message.reply_text("Use: /allow 123456789 or /allow @username")
+
 async def deny_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id)!= str(ADMIN_ID): return
-    if context.args:
-        uid=int(context.args[0]); allowed_users.discard(uid); save_json(ALLOWED_FILE, list(allowed_users))
-        await update.message.reply_text(f"Access removed {uid}")
+    if str(update.effective_user.id)!= str(ADMIN_ID):
+        await update.message.reply_text("Owner only"); return
+    if not context.args:
+        await update.message.reply_text("Use: /deny USER_ID or /deny @username"); return
+    input_val = context.args[0]
+    if input_val.startswith("@"):
+        uname = input_val.lower()
+        allowed_users.discard(uname)
+        for uid, info in list(users_data.items()):
+            if info.get('username','').lower() == uname:
+                allowed_users.discard(int(uid))
+        save_json(ALLOWED_FILE, list(allowed_users))
+        await update.message.reply_text(f"Access removed {input_val}")
+    else:
+        try:
+            uid=int(input_val)
+            allowed_users.discard(uid)
+            allowed_users.discard(str(uid))
+            save_json(ALLOWED_FILE, list(allowed_users))
+            await update.message.reply_text(f"Access removed {uid}")
+        except:
+            await update.message.reply_text("Use: /deny 123456789 or /deny @username")
+
 async def users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id)!= str(ADMIN_ID): return
-    msg=f"👥 Users List IST\nTotal:{len(users_data)}\n\n"
+    if str(update.effective_user.id)!= str(ADMIN_ID):
+        await update.message.reply_text("Owner only - Admin only"); return
+    if not users_data:
+        await update.message.reply_text("No users yet"); return
+    msg=f"👥 Users List - IST\nTotal: {len(users_data)}\n\n"
     for uid, info in list(users_data.items())[-30:]:
-        left_info = f" Left:{datetime.fromtimestamp(info['left_at'], IST).strftime('%d-%m %I:%M %p')}" if "left_at" in info else ""
-        msg+=f"ID:{info.get('id')} {info.get('name')} {info.get('username')}\nF:{info.get('first_seen')} L:{info.get('last_seen')}{left_info}\n\n"
+        left_info = ""
+        if "left_at" in info:
+            left_info = f"\n Left: {datetime.fromtimestamp(info['left_at'], IST).strftime('%d-%m %I:%M %p')}"
+        msg+=f"ID:{info.get('id')} {info.get('name')} {info.get('username')}\nFirst: {info.get('first_seen')}\nLast: {info.get('last_seen')}{left_info}\n\n"
     await update.message.reply_text(msg[:4000])
 
 async def button_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q=update.callback_query; await q.answer()
     user=q.from_user
-    if str(user.id)!=str(ADMIN_ID) and int(user.id) not in allowed_users:
+    # access check for button
+    uname = f"@{user.username}".lower() if user.username else ""
+    has_manual = int(user.id) in allowed_users or str(user.id) in [str(x) for x in allowed_users] or (uname and uname in [str(x).lower() for x in allowed_users])
+    if str(user.id)!=str(ADMIN_ID) and not has_manual:
         try:
             m=await application.bot.get_chat_member(GROUP_ID, user.id)
-            if m.status in ['left','kicked']:
-                await q.message.reply_text(f"You left group so please Join group and use this bot\n{GROUP_LINK}")
+            if m.status in ['left','kicked','banned']:
+                uid = str(user.id)
+                is_old = uid in users_data and ("joined_once" in users_data[uid] or "left_at" in users_data[uid])
+                if is_old:
+                    await q.message.reply_text(f"⚠️ You left group so please Join group and use this bot\n{GROUP_LINK}")
+                else:
+                    await q.message.reply_text(f"👋 Welcome! Please join our group first:\n{GROUP_LINK}\nJoin karke /start karo ✅")
                 return
         except: pass
     if q.data=="scan":
@@ -301,7 +394,7 @@ application.add_handler(CommandHandler("users", users_cmd))
 application.add_handler(CallbackQueryHandler(button_cb))
 
 @app.route('/')
-def home(): return "Bot Secure OK - DTC Trader"
+def home(): return "Bot Secure OK - DTC Trader - Everything Good"
 
 if __name__ == "__main__":
     loop = asyncio.new_event_loop()
