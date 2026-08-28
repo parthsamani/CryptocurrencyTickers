@@ -47,31 +47,22 @@ def fetch_yahoo_data(symbol, range_str, interval):
 def get_analysis(df):
     if len(df) < 50: return None
     close = df['Close'].iloc[-1]
-    # Simple & Fast EMA + Support/Resist (Pine heavy logic hata diya)
     ema9 = df['Close'].ewm(span=9).mean().iloc[-1]
     ema50 = df['Close'].ewm(span=50).mean().iloc[-1]
     sup = df['Low'].tail(20).min()
     res = df['High'].tail(20).max()
     atr = (df['High']-df['Low']).tail(14).mean()
-
-    # Trend Logic
     if ema9 > ema50 and close > ema9:
-        verdict="BUY"; trend="Up Trend"
-        sl=sup; risk=close-sl
+        verdict="BUY"; trend="Up Trend"; sl=sup; risk=close-sl
     elif ema9 < ema50 and close < ema9:
-        verdict="SELL"; trend="Down Trend"
-        sl=res; risk=sl-close
+        verdict="SELL"; trend="Down Trend"; sl=res; risk=sl-close
     else:
-        verdict="WAIT"; trend="Sideways"
-        sl=close-atr if close>ema9 else close+atr
-        risk=abs(close-sl)
-
+        verdict="WAIT"; trend="Sideways"; sl=close-atr if close>ema9 else close+atr; risk=abs(close-sl)
     entry=close
-    t1=entry+risk if verdict=="BUY" else entry-risk if verdict=="SELL" else entry
-    t2=entry+risk*2 if verdict=="BUY" else entry-risk*2 if verdict=="SELL" else entry
-    t3=entry+risk*3 if verdict=="BUY" else entry-risk*3 if verdict=="SELL" else entry
-
-    return {"close":close,"trend":trend,"verdict":verdict,"support":sup,"resistance":res,"entry":entry,"sl":sl,"t1":t1,"t2":t2,"t3":t3}
+    t1=entry+risk if verdict=="BUY" else entry-risk
+    t2=entry+risk*2 if verdict=="BUY" else entry-risk*2
+    t3=entry+risk*3 if verdict=="BUY" else entry-risk*3
+    return {"trend":trend,"verdict":verdict,"support":sup,"resistance":res,"entry":entry,"sl":sl,"t1":t1,"t2":t2,"t3":t3}
 
 def get_signals_for_symbol(symbol):
     rng, interv = TF_MAP.get(user_settings['tf'], ("5d","15m"))
@@ -109,8 +100,7 @@ async def scan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for sym in list(custom_symbols):
             r = get_signals_for_symbol(sym)
             if not r:
-                await update.message.reply_text(f"❌ {sym} data fail")
-                continue
+                await update.message.reply_text(f"❌ {sym} data fail"); continue
             a=r['analysis']
             name="XAUUSD" if "GC" in r['symbol'] else r['symbol'].replace("=X","").replace("-USD","")
             emoji="🟢" if a['verdict']=="BUY" else "🔴" if a['verdict']=="SELL" else "🟡"
@@ -127,36 +117,35 @@ async def scan_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Error: {e}")
 
 async def add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args: return
+    if not context.args: await update.message.reply_text("Use: /add XAUUSD"); return
     sym=normalize_symbol(context.args[0]); custom_symbols.add(sym)
-    await update.message.reply_text(f"Added {sym}")
+    await update.message.reply_text(f"✅ Added {sym}")
 async def remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args: return
+    if not context.args: await update.message.reply_text("Use: /remove XAUUSD"); return
     sym=normalize_symbol(context.args[0]); custom_symbols.discard(sym)
-    await update.message.reply_text(f"Removed {sym}")
+    await update.message.reply_text(f"❌ Removed {sym}")
 async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     custom_symbols.clear(); custom_symbols.update(DEFAULT_SYMBOLS)
-    await update.message.reply_text("Reset to XAUUSD & BTC-USD")
+    await update.message.reply_text("🔄 Reset to XAUUSD & BTC-USD")
 async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"Pairs: {', '.join(custom_symbols)}")
+    await update.message.reply_text(f"📋 Pairs: {', '.join(custom_symbols)}")
 async def tf_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args and context.args[0] in TF_MAP:
         user_settings['tf']=context.args[0]
-        await update.message.reply_text(f"TF={user_settings['tf']}")
+        await update.message.reply_text(f"✅ TF={user_settings['tf']}")
     else: await update.message.reply_text("Use /tf 1m,3m,5m,15m,30m,1h,2h,4h,1d,1W")
 async def settings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"TF:{user_settings['tf']} Pairs:{len(custom_symbols)}")
+    await update.message.reply_text(f"⚙️ TF:{user_settings['tf']} Pairs:{len(custom_symbols)}")
 
 async def button_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q=update.callback_query; await q.answer()
     if q.data=="scan":
-        # create fake update object
         update.message = q.message
         await scan_cmd(update, context)
     elif q.data.startswith("tf_"):
         tf=q.data.replace("tf_","")
         user_settings['tf']=tf
-        await q.message.reply_text(f"✅ TF {tf} set. /scan karo")
+        await q.message.reply_text(f"✅ TF {tf} set. Ab /scan karo")
 
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("scan", scan_cmd))
@@ -169,8 +158,11 @@ application.add_handler(CommandHandler("settings", settings_cmd))
 application.add_handler(CallbackQueryHandler(button_cb))
 
 @app.route('/')
-def home(): return f"Bot OK TF:{user_settings['tf']}"
+def home(): return f"Bot OK TF:{user_settings['tf']} Pairs:{len(custom_symbols)}"
 
 if __name__ == "__main__":
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     Thread(target=lambda: app.run(host='0.0.0.0', port=PORT), daemon=True).start()
+    print(f"Starting Bot TF:{user_settings['tf']}")
     application.run_polling(drop_pending_updates=True)
